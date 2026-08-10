@@ -5,6 +5,7 @@ import time
 import pandas as pd
 import streamlit as st
 
+from databricks.sdk.service.sql import Disposition, Format
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.core import Config
 from databricks.vector_search.client import VectorSearchClient
@@ -69,8 +70,8 @@ def run_sql(query):
         warehouse_id=DATABRICKS_WAREHOUSE_ID,
         statement=query,
         wait_timeout="30s",
-        disposition="INLINE",
-        format="JSON_ARRAY"
+        disposition=Disposition.INLINE,
+        format=Format.JSON_ARRAY
     )
 
     if response.status and response.status.state:
