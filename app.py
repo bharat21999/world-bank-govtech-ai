@@ -65,22 +65,27 @@ def run_sql(query):
 
     workspace_client = get_workspace_client()
 
-    with sql.connect(
-        server_hostname=workspace_client.config.host.replace("https://", ""),
-        http_path=f"/sql/1.0/warehouses/{DATABRICKS_WAREHOUSE_ID}",
-        credentials_provider=workspace_client.config.authenticate
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
+    response = workspace_client.statement_execution.execute_statement(
+        warehouse_id=DATABRICKS_WAREHOUSE_ID,
+        statement=query,
+        wait_timeout="30s",
+        disposition="INLINE",
+        format="JSON_ARRAY"
+    )
 
-            # INSERT / UPDATE / DELETE queries do not return rows
-            if cursor.description is None:
-                return pd.DataFrame()
+    if response.status and response.status.state:
+        state = str(response.status.state)
+        if "FAILED" in state:
+            error_message = "SQL statement failed."
+            if response.status.error:
+                error_message = response.status.error.message
+            raise RuntimeError(error_message)
 
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
+    if not response.result or not response.result.data_array:
+        return pd.DataFrame()
 
-    return pd.DataFrame(rows, columns=columns)
+    columns = [col.name for col in response.manifest.schema.columns]
+    return pd.DataFrame(response.result.data_array, columns=columns)
 
 
 def clean_sql_text(value):
