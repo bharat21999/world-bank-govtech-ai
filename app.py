@@ -629,8 +629,11 @@ if question:
                 )
 
             except Exception as e:
+                import traceback
+
                 latency_seconds = round(time.time() - start_time, 3)
-                error_message = f"Something went wrong: {e}"
+                error_message = f"Something went wrong: {type(e).__name__}: {e}"
+                stack_trace = traceback.format_exc()
 
                 try:
                     log_interaction(
@@ -644,6 +647,10 @@ if question:
                     pass
 
                 st.error(error_message)
+                st.exception(e)
+
+                with st.expander("Full traceback"):
+                    st.code(stack_trace)
 
                 st.session_state.messages.append(
                     {
