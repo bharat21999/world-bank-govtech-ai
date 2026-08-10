@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from databricks.sdk import WorkspaceClient
+from databricks.sdk.core import Config
 from databricks.vector_search.client import VectorSearchClient
 from databricks import sql
 from databricks.sdk.service.serving import ChatMessage, ChatMessageRole
@@ -21,14 +22,16 @@ st.set_page_config(
 # Config
 # -----------------------------
 
-VECTOR_SEARCH_ENDPOINT_NAME = os.getenv("VECTOR_SEARCH_ENDPOINT_NAME")
-VECTOR_SEARCH_INDEX_NAME = os.getenv("VECTOR_SEARCH_INDEX_NAME")
-LLM_ENDPOINT_NAME = os.getenv("LLM_ENDPOINT_NAME")
+VECTOR_SEARCH_ENDPOINT_NAME = os.getenv("VECTOR_SEARCH_ENDPOINT_NAME", "wb_ai_search_endpoint")
+VECTOR_SEARCH_INDEX_NAME = os.getenv("VECTOR_SEARCH_INDEX_NAME", "worldbank_govtech.govtech.govtech_report_chunks_index")
+LLM_ENDPOINT_NAME = os.getenv("LLM_ENDPOINT_NAME", "databricks-meta-llama-3-3-70b-instruct")
+
 CATALOG = os.getenv("CATALOG", "worldbank_govtech")
 SCHEMA = os.getenv("SCHEMA", "govtech")
-GTMI_TABLE = os.getenv("GTMI_TABLE", "worldbank_govtech.govtech.silver_gtmi_scores")
-DATABRICKS_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
 
+GTMI_TABLE = f"{CATALOG}.{SCHEMA}.silver_gtmi_scores"
+
+DATABRICKS_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
 
 # -----------------------------
 # Databricks clients
@@ -36,35 +39,17 @@ DATABRICKS_WAREHOUSE_ID = os.getenv("DATABRICKS_WAREHOUSE_ID")
 
 @st.cache_resource
 def get_workspace_client():
-    databricks_host = os.getenv("DATABRICKS_HOST")
-    databricks_token = os.getenv("DATABRICKS_TOKEN")
-
-    if not databricks_host:
-        raise ValueError("DATABRICKS_HOST is not set.")
-
-    if not databricks_token:
-        raise ValueError("DATABRICKS_TOKEN is not set.")
-
-    return WorkspaceClient(
-        host=databricks_host,
-        token=databricks_token
-    )
+    return WorkspaceClient()
 
 
 @st.cache_resource
 def get_vector_index():
-    databricks_host = os.getenv("DATABRICKS_HOST")
-    databricks_token = os.getenv("DATABRICKS_TOKEN")
-
-    if not databricks_host:
-        raise ValueError("DATABRICKS_HOST is not set.")
-
-    if not databricks_token:
-        raise ValueError("DATABRICKS_TOKEN is not set.")
+    cfg = Config()
 
     vsc = VectorSearchClient(
-        workspace_url=databricks_host,
-        personal_access_token=databricks_token,
+        workspace_url=cfg.host,
+        service_principal_client_id=cfg.client_id,
+        service_principal_client_secret=cfg.client_secret,
         disable_notice=True
     )
 
@@ -75,24 +60,15 @@ def get_vector_index():
 
 
 def run_sql(query):
-    databricks_host = os.getenv("DATABRICKS_HOST")
-    databricks_token = os.getenv("DATABRICKS_TOKEN")
-
-    if not databricks_host:
-        raise ValueError("DATABRICKS_HOST is not set.")
-
-    if not databricks_token:
-        raise ValueError("DATABRICKS_TOKEN is not set.")
-
     if not DATABRICKS_WAREHOUSE_ID:
         raise ValueError("DATABRICKS_WAREHOUSE_ID is not set.")
 
-    server_hostname = databricks_host.replace("https://", "")
+    workspace_client = get_workspace_client()
 
     with sql.connect(
-        server_hostname=server_hostname,
+        server_hostname=workspace_client.config.host.replace("https://", ""),
         http_path=f"/sql/1.0/warehouses/{DATABRICKS_WAREHOUSE_ID}",
-        access_token=databricks_token
+        credentials_provider=workspace_client.config.authenticate
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
