@@ -63,25 +63,24 @@ def run_sql(query):
     if not DATABRICKS_WAREHOUSE_ID:
         raise ValueError("DATABRICKS_WAREHOUSE_ID is not set.")
 
-    cfg = Config()
+    workspace_client = get_workspace_client()
 
-    server_hostname = cfg.host.replace("https://", "").replace("http://", "")
+    response = workspace_client.statement_execution.execute_statement(
+        warehouse_id=DATABRICKS_WAREHOUSE_ID,
+        statement=query,
+        wait_timeout="30s",
+        disposition="INLINE",
+        format="JSON_ARRAY"
+    )
 
-    with sql.connect(
-        server_hostname=server_hostname,
-        http_path=f"/sql/1.0/warehouses/{DATABRICKS_WAREHOUSE_ID}",
-        credentials_provider=cfg.authenticate
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(query)
+    if response.status and response.status.state and str(response.status.state) == "StatementState.FAILED":
+        raise RuntimeError(response.status.error.message if response.status.error else "SQL statement failed.")
 
-            if cursor.description is None:
-                return pd.DataFrame()
+    if not response.result or not response.result.data_array:
+        return pd.DataFrame()
 
-            rows = cursor.fetchall()
-            columns = [desc[0] for desc in cursor.description]
-
-    return pd.DataFrame(rows, columns=columns)
+    columns = [col.name for col in response.manifest.schema.columns]
+    return pd.DataFrame(response.result.data_array, columns=columns)
 
 
 def clean_sql_text(value):
