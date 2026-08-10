@@ -65,22 +65,22 @@ def run_sql(query):
 
     workspace_client = get_workspace_client()
 
-    response = workspace_client.statement_execution.execute_statement(
-        warehouse_id=DATABRICKS_WAREHOUSE_ID,
-        statement=query,
-        wait_timeout="30s",
-        disposition="INLINE",
-        format="JSON_ARRAY"
-    )
+    with sql.connect(
+        server_hostname=workspace_client.config.host.replace("https://", ""),
+        http_path=f"/sql/1.0/warehouses/{DATABRICKS_WAREHOUSE_ID}",
+        credentials_provider=workspace_client.config.authenticate
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(query)
 
-    if response.status and response.status.state and str(response.status.state) == "StatementState.FAILED":
-        raise RuntimeError(response.status.error.message if response.status.error else "SQL statement failed.")
+            # INSERT / UPDATE / DELETE queries do not return rows
+            if cursor.description is None:
+                return pd.DataFrame()
 
-    if not response.result or not response.result.data_array:
-        return pd.DataFrame()
+            rows = cursor.fetchall()
+            columns = [desc[0] for desc in cursor.description]
 
-    columns = [col.name for col in response.manifest.schema.columns]
-    return pd.DataFrame(response.result.data_array, columns=columns)
+    return pd.DataFrame(rows, columns=columns)
 
 
 def clean_sql_text(value):
@@ -90,31 +90,34 @@ def clean_sql_text(value):
 
 
 def log_interaction(question, route_info, answer, latency_seconds, error_message=None):
-    route_info = route_info or {}
+    try:
+        route_info = route_info or {}
 
-    question = clean_sql_text(question)
-    answer = clean_sql_text(answer)
-    error_message = clean_sql_text(error_message)
+        question = clean_sql_text(question)
+        answer = clean_sql_text(answer)
+        error_message = clean_sql_text(error_message)
+        route = clean_sql_text(route_info.get("route", ""))
+        country = clean_sql_text(route_info.get("country", ""))
+        component = clean_sql_text(route_info.get("component", ""))
 
-    route = clean_sql_text(route_info.get("route", ""))
-    country = clean_sql_text(route_info.get("country", ""))
-    component = clean_sql_text(route_info.get("component", ""))
+        query = f"""
+            INSERT INTO worldbank_govtech.govtech.monitoring_app_logs
+            VALUES (
+                current_timestamp(),
+                '{question}',
+                '{route}',
+                '{country}',
+                '{component}',
+                '{answer}',
+                {latency_seconds},
+                '{error_message}'
+            )
+        """
 
-    query = f"""
-        INSERT INTO worldbank_govtech.govtech.monitoring_app_logs
-        VALUES (
-            current_timestamp(),
-            '{question}',
-            '{route}',
-            '{country}',
-            '{component}',
-            '{answer}',
-            {latency_seconds},
-            '{error_message}'
-        )
-    """
+        run_sql(query)
 
-    run_sql(query)
+    except Exception as e:
+        print(f"Monitoring log failed: {e}")
 
 def call_llm(prompt):
     workspace_client = get_workspace_client()
@@ -622,16 +625,15 @@ if question:
 
                 latency_seconds = round(time.time() - start_time, 3)
 
-                try:
-                    log_interaction(
-                        question=question,
-                        route_info=route_info,
-                        answer=answer,
-                        latency_seconds=latency_seconds,
-                        error_message=None
-                    )
-                except Exception as log_error:  
-                    st.warning(f"Answer generated, but monitoring log failed: {log_error}")  
+                
+                log_interaction(
+                    question=question,
+                    route_info=route_info,
+                    answer=answer,
+                    latency_seconds=latency_seconds,
+                    error_message=None
+                )
+                  
 
                 st.markdown(answer)
 
