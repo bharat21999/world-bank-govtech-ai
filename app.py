@@ -63,17 +63,18 @@ def run_sql(query):
     if not DATABRICKS_WAREHOUSE_ID:
         raise ValueError("DATABRICKS_WAREHOUSE_ID is not set.")
 
-    workspace_client = get_workspace_client()
+    cfg = Config()
+
+    server_hostname = cfg.host.replace("https://", "").replace("http://", "")
 
     with sql.connect(
-        server_hostname=workspace_client.config.host.replace("https://", ""),
+        server_hostname=server_hostname,
         http_path=f"/sql/1.0/warehouses/{DATABRICKS_WAREHOUSE_ID}",
-        credentials_provider=workspace_client.config.authenticate
+        credentials_provider=cfg.authenticate
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
 
-            # INSERT / UPDATE / DELETE queries do not return rows
             if cursor.description is None:
                 return pd.DataFrame()
 
