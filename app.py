@@ -123,6 +123,10 @@ def call_llm(prompt):
         name=LLM_ENDPOINT_NAME,
         messages=[
             ChatMessage(
+                role=ChatMessageRole.SYSTEM,
+                content="You are a helpful AI assistant for the World Bank GovTech Maturity Index 2025."
+            ),
+            ChatMessage(
                 role=ChatMessageRole.USER,
                 content=prompt
             )
@@ -131,7 +135,23 @@ def call_llm(prompt):
         temperature=0.1
     )
 
-    return response.choices[0].message.content
+    try:
+        return response.choices[0].message.content
+    except Exception:
+        pass
+
+    if isinstance(response, dict):
+        choices = response.get("choices", [])
+        if choices:
+            message = choices[0].get("message", {})
+            if isinstance(message, dict):
+                return message.get("content", str(response))
+
+        predictions = response.get("predictions", [])
+        if predictions:
+            return str(predictions[0])
+
+    return str(response)
 
 # -----------------------------
 # Vector Search / Report RAG
