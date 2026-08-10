@@ -622,13 +622,16 @@ if question:
 
                 latency_seconds = round(time.time() - start_time, 3)
 
-                log_interaction(
-                    question=question,
-                    route_info=route_info,
-                    answer=answer,
-                    latency_seconds=latency_seconds,
-                    error_message=None
-                )
+                try:
+                    log_interaction(
+                        question=question,
+                        route_info=route_info,
+                        answer=answer,
+                        latency_seconds=latency_seconds,
+                        error_message=None
+                    )
+                except Exception as log_error:  
+                    st.warning(f"Answer generated, but monitoring log failed: {log_error}")  
 
                 st.markdown(answer)
 
