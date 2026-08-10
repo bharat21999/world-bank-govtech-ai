@@ -1,0 +1,5 @@
+streamlit
+databricks-sdk
+databricks-sql-connector
+databricks-vectorsearch
+pandas
